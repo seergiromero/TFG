@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aplicación Follow Me</title>
+    <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+
+<body>
+    <div class="container">
+        <div class="title">
+            <h1>Aplicación Follow Me</h1>
+        </div>
+        <div class="image">
+            <img src="{{ url_for('static', filename='mir.png') }}" alt="Imagen" width="250" height="150">
+        </div>
+        <div>
+            <img id="video_feed" src="" alt="Camera Feed" width="640" height="480">
+        </div>
+        <div class="button-container">
+            <button id="start_stop_button" class="start_stop_default">Start</button>
+            <button id="detect_button" class="inactive">Detect</button>
+            <button id="focus_button" class="inactive">Focus</button>
+        </div>
+
+        <div class="form-container">
+            <form id="number_form">
+                <label for="number_input">Número seguimiento:</label>
+                <input type="text" id="number_input" name="number">
+                <button type="submit" class="send_button">Enviar</button>
+            </form>
+            <form id="percentage_form">
+                <label for="percentage_input">Porcentaje seguridad detección:</label>
+                <input type="text" id="percentage_input" name="percentage">
+                <button type="submit" class="send_button">Enviar</button>
+            </form>
+            <form id="reid_form">
+                <label for="reid_input">Número de intentos de reidentificación:</label>
+                <input type="text" id="reid_input" name="reid">
+                <button type="submit" class="send_button">Enviar</button>
+            </form>
+        </div>
+
+        <div class="big-container">
+            <div class="modes-container">
+                <h2>Modos</h2>
+                <div class="modes-buttons">
+                    <button id="XY_button" class="inactive">XY</button>
+                    <button id="lineal_button" class="active">Lineal</button>
+                </div>
+            </div>
+            <div class="tracking-container">
+                <h2>Tipo de seguimiento</h2>
+                <div class="tracking-buttons">
+                    <button id="Global_button" class="inactive">Global</button>
+                    <button id="Relative_button" class="active">Relativo</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.4.1/socket.io.js"></script>
+    <script>
+        const socket = io('http://172.20.10.4:5000', {
+            transports: ['websocket'],
+            withCredentials: true
+        });
+
+        let focusActive = false;
+        let detectActive = false;
+        let globalActive = true; 
+        let linealActive = true; 
+        let start = false;
+
+        socket.on('connect', () => {
+            console.log('Connected to server');
+        });
+
+        socket.on('video_frame', (frame_base64) => {
+            const video = document.getElementById('video_feed');
+            video.src = `data:image/jpeg;base64,${frame_base64}`;
+        });
+
+        document.querySelectorAll('form').forEach(form => {
+            form.addEventListener('submit', function (event) {
+                event.preventDefault();
+                const input = this.querySelector('input[type="text"]');
+                const button = this.querySelector('button[type="submit"]');
+                if (form.id === 'number_form') {
+                    socket.emit('send_number', input.value);
+                } else if (form.id === 'percentage_form') {
+                    socket.emit('get_percentage', input.value);
+                } else if (form.id === 'reid_form') {
+                    socket.emit('get_reid', input.value);
+                }
+                input.value = '';
+                button.style.display = 'none';
+                button.classList.remove('send_button_enabled');
+                button.classList.add('send_button_disabled');
+            });
+        });
+
+        document.querySelectorAll('form button[type="submit"]').forEach(button => {
+            button.style.display = 'none';
+            button.classList.add('send_button'); 
+        });
+
+        document.querySelectorAll('form input[type="text"]').forEach(input => {
+            input.addEventListener('input', function () {
+                const button = this.nextElementSibling;
+                if (this.value.trim() !== '') {
+                    button.style.display = 'inline-block';
+                    button.classList.remove('send_button_disabled');
+                    button.classList.add('send_button_enabled');
+                } else {
+                    button.style.display = 'none';
+                    button.classList.remove('send_button_enabled');
+                    button.classList.add('send_button_disabled');
+                }
+            });
+        });
+
+        document.getElementById('start_stop_button').addEventListener('click', function () {
+            start = !start;
+            socket.emit('start_video', start);
+            toggleStartStopButton();
+        });
+
+        document.getElementById('start_stop_button').addEventListener('touchstart', function(event) {
+            event.preventDefault();
+            start = !start;
+            socket.emit('start_video', start);
+            toggleStartStopButton();
+        });
+
+        function toggleStartStopButton() {
+            const button = document.getElementById('start_stop_button');
+            console.log('Toggling button. Start is now:', start);
+            if (start) {
+                button.textContent = 'Stop';
+                button.classList.remove('start_stop_default');
+                button.classList.add('start_stop_active');
+            } else {
+                button.textContent = 'Start';
+                button.classList.remove('start_stop_active');
+                button.classList.add('start_stop_default');
+            }
+
+
+
+        }
+
+        document.getElementById('focus_button').addEventListener('click', function () {
+            focusActive = !focusActive;
+            socket.emit('focus_mode', focusActive);
+            toggleButtonState('focus_button', focusActive);
+        });
+
+        document.getElementById('detect_button').addEventListener('click', function () {
+            detectActive = !detectActive;
+            socket.emit('detect', detectActive);
+            toggleButtonState('detect_button', detectActive);
+        });
+        
+
+        document.getElementById('Global_button').addEventListener('click', function () {
+            relativeActive = false;
+            socket.emit('Relative_tracking', false);
+            toggleButtonState('Global_button', true);
+            toggleButtonState('Relative_button', false);
+            document.getElementById('lineal_button').style.display = 'none';
+            if (linealActive){
+                linealActive = !linealActive;
+                socket.emit('lineal_mode', false);
+                toggleButtonState('lineal_button', false);
+                toggleButtonState('XY_button', true);
+            }
+                
+            
+        });
+
+        document.getElementById('Relative_button').addEventListener('click', function () {
+            relativeActive = true;
+            socket.emit('Relative_tracking', true);
+            toggleButtonState('Relative_button', true);
+            toggleButtonState('Global_button', false);
+            document.getElementById('lineal_button').style.display = 'inline-block';
+
+        });
+
+        document.getElementById('lineal_button').addEventListener('click', function () {
+            linealActive = true;
+            socket.emit('lineal_mode', true);
+            toggleButtonState('lineal_button', true);
+            toggleButtonState('XY_button', false);
+        });
+
+        document.getElementById('XY_button').addEventListener('click', function () {
+            linealActive = false;
+            socket.emit('lineal_mode', false);
+            toggleButtonState('XY_button', true);
+            toggleButtonState('lineal_button', false);
+        });
+
+        function toggleButtonState(buttonId, isActive) {
+            const button = document.getElementById(buttonId);
+            if (isActive) {
+                button.classList.remove('inactive');
+                button.classList.add('active');
+            } else {
+                button.classList.remove('active');
+                button.classList.add('inactive');
+            }
+        }
+
+        socket.on('video_status', function (data) {
+            console.log('Video Status:', data.status);
+        });
+
+    </script>
+</body>
+
+</html>
